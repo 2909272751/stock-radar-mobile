@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="A 股价格与 MACD 指标提醒">
+  <title>股价雷达</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="股价雷达首页">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>
+          <strong>股价雷达</strong>
+          <small>A 股价格与指标提醒</small>
+        </span>
+      </a>
+      <div class="topbar-actions">
+        <span id="market-pill" class="pill pill-neutral">读取状态中</span>
+        <button id="change-password-btn" class="icon-btn hidden" type="button" title="修改密码" aria-label="修改密码">改密码</button>
+        <button id="logout-btn" class="icon-btn hidden" type="button" title="退出登录" aria-label="退出登录">退出</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="login-view" class="auth-view hidden">
+        <div class="auth-hero">
+          <div class="eyebrow">PRICE, SIGNAL, NOTIFY</div>
+          <h1>不用一直盯盘，<br><em>到点再叫你。</em></h1>
+          <p>低频检查你的自选股。价格到线、涨跌幅到位，或 MACD 出现金叉/死叉时，发送一条清楚的提醒。</p>
+          <div class="hero-stat-row">
+            <div><b>15 分钟</b><span>建议检查间隔</span></div>
+            <div><b>2 路</b><span>行情源自动切换</span></div>
+            <div><b>只读</b><span>不连接交易账户</span></div>
+          </div>
+        </div>
+        <div class="auth-card">
+          <form id="login-form" class="stack-form">
+            <div class="form-heading">
+              <h2>欢迎回来</h2>
+              <p>登录后查看监控与提醒。</p>
+            </div>
+            <label>账号<input id="login-username" autocomplete="username" required placeholder="输入账号" /></label>
+            <label>密码<input id="login-password" type="password" autocomplete="current-password" required placeholder="输入密码" /></label>
+            <button class="btn btn-primary btn-block" type="submit">进入面板</button>
+            <p class="auth-hint">账号由部署者在 `.env` 中配置；忘记密码可在登录后进入面板修改，或由部署者重置。</p>
+          </form>
+        </div>
+      </section>
+
+      <section id="app-view" class="app-view hidden">
+        <div id="onboarding" class="onboarding hidden">
+          <div class="onboarding-copy">
+            <span class="step-badge">3 步开始</span>
+            <h2>先把提醒跑起来</h2>
+            <p>不需要看完全部设置。跟着下面三步走，完成之后它会自己低频检查。</p>
+          </div>
+          <ol class="onboarding-steps">
+            <li class="done"><span>1</span><div><b>加一只股票</b><small>输入 6 位代码，名称会自动带出</small></div></li>
+            <li><span>2</span><div><b>告诉它什么时候叫你</b><small>价格、涨跌幅，或 MACD 金叉</small></div></li>
+            <li><span>3</span><div><b>选择通知方式</b><small>企业微信、Bark 或通用 Webhook</small></div></li>
+          </ol>
+          <button id="onboarding-action" class="btn btn-primary" type="button">开始添加股票</button>
+        </div>
+
+        <section class="status-strip" aria-label="运行状态">
+          <div class="status-main">
+            <span id="status-dot" class="status-dot"></span>
+            <div>
+              <b id="status-text">正在读取状态</b>
+              <small id="status-note">行情与提醒设置会在登录后加载</small>
+            </div>
+          </div>
+          <div class="status-meta">
+            <div><span>下次检查</span><b id="next-check">—</b></div>
+            <div><span>检查间隔</span><b id="interval-label">—</b></div>
+            <div><span>监控标的</span><b id="monitor-count">0</b></div>
+          </div>
+        </section>
+
+        <div class="dashboard-grid">
+          <section class="panel watchlist-panel">
+            <div class="panel-head">
+              <div>
+                <div class="eyebrow">WATCHLIST</div>
+                <h2>自选行情</h2>
+              </div>
+              <div class="panel-actions">
+                <button id="refresh-quotes-btn" class="icon-text-btn" type="button">刷新行情</button>
+                <button id="add-monitor-btn" class="btn btn-primary btn-sm" type="button">添加股票</button>
+              </div>
+            </div>
+            <div id="watchlist-empty" class="empty-state hidden">
+              <div class="empty-glyph" aria-hidden="true">◎</div>
+              <h3>还没有自选股</h3>
+              <p>添加你要观察的股票。支持 A 股代码，也可以加入指数。</p>
+              <button class="btn btn-primary" type="button" data-open-add>添加第一只股票</button>
+            </div>
+            <div id="watchlist" class="watchlist" aria-live="polite"></div>
+            <div class="walkthrough-row">
+              <button id="run-once-btn" class="subtle-btn" type="button">立即检查一次</button>
+              <span id="last-check" class="muted"></span>
+            </div>
+          </section>
+
+          <aside class="side-column">
+            <section class="panel settings-panel">
+              <div class="panel-head compact">
+                <div><div class="eyebrow">HEARTBEAT</div><h2>检查节奏</h2></div>
+              </div>
+              <div class="interval-picker" role="group" aria-label="检查间隔">
+                <button type="button" data-interval="300">5 分钟</button>
+                <button type="button" data-interval="900" class="active">15 分钟</button>
+                <button type="button" data-interval="1800">30 分钟</button>
+                <button type="button" data-interval="3600">1 小时</button>
+              </div>
+              <label class="inline-field">自定义（分钟）<input id="custom-interval" type="number" min="1" max="1440" step="1" inputmode="numeric" /></label>
+              <p class="micro-copy">仅交易时段检查。低频轮询对行情源更友好，也更不容易被限制。</p>
+            </section>
+
+            <section class="panel notification-panel">
+              <div class="panel-head compact">
+                <div><div class="eyebrow">NOTIFY ME</div><h2>通知方式</h2></div>
+                <span id="notification-state" class="pill pill-warn">未设置</span>
+              </div>
+              <p id="notification-copy" class="panel-copy">目前提醒只会留在面板里。选择一种方式，条件命中时才会主动通知你。</p>
+              <div class="notification-actions">
+                <button id="open-notification-settings" class="btn btn-secondary" type="button">配置通知</button>
+                <button id="quick-test-notification" class="btn btn-secondary" type="button">发送测试</button>
+              </div>
+              <p id="notification-last-error" class="notice-error hidden"></p>
+            </section>
+          </aside>
+        </div>
+
+        <section id="alerts-panel" class="panel alerts-panel">
+          <div class="panel-head">
+            <div><div class="eyebrow">TIMELINE</div><h2>提醒记录</h2></div>
+            <div class="panel-actions">
+              <button id="clear-alerts-btn" class="icon-text-btn danger-text" type="button">清理已完成</button>
+            </div>
+          </div>
+          <div id="alert-empty" class="empty-inline">条件命中后，提醒会按时间出现在这里。</div>
+          <div id="alert-list" class="alert-list" aria-live="polite"></div>
+          <button id="load-more-alerts" class="subtle-btn hidden" type="button">加载更多</button>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="monitor-dialog" class="sheet-dialog">
+    <form id="monitor-form" method="dialog">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div><span class="eyebrow">WATCH ITEM</span><h2 id="monitor-dialog-title">添加股票</h2></div>
+        <button type="button" class="close-btn" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <input id="monitor-id" type="hidden" />
+      <div class="field-grid">
+        <label class="span-2">股票 / 指数
+          <input id="monitor-code" required autocomplete="off" placeholder="输入名称或代码，例如 浦发银行、600000" />
+          <div id="instrument-results" class="instrument-results hidden" role="listbox" aria-label="股票搜索结果"></div>
+          <small id="code-hint" class="field-hint">支持中文名、拼音首字母、6 位代码；指数可输入 1A0001 或 000001.SH。</small>
+        </label>
+        <label class="span-2">显示名称（可选）
+          <input id="monitor-name" placeholder="例如：贵州茅台" maxlength="64" />
+        </label>
+        <label class="span-2">备注（可选）
+          <input id="monitor-note" placeholder="例如：观察突破或风险线" maxlength="255" />
+        </label>
+      </div>
+      <label class="switch-row">
+        <span><b>启用监控</b><small>关闭后保留配置，但不再检查</small></span>
+        <input id="monitor-enabled" type="checkbox" checked />
+      </label>
+      <div id="rule-editor" class="rule-editor hidden">
+        <div class="section-divider"><span>提醒条件</span><small>可添加多条，满足任意一条就提醒</small></div>
+        <div id="rule-list" class="rule-list"></div>
+        <button id="add-rule-btn" class="dashed-btn" type="button">＋ 添加一个条件</button>
+      </div>
+      <p id="monitor-form-error" class="form-error hidden"></p>
+      <div class="sheet-actions">
+        <button type="button" class="btn btn-secondary" data-close-dialog>取消</button>
+        <button id="save-monitor-btn" class="btn btn-primary" type="submit">保存股票</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rule-dialog" class="sheet-dialog rule-dialog">
+    <form id="rule-form" method="dialog">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div><span class="eyebrow">CONDITION</span><h2 id="rule-dialog-title">添加提醒条件</h2></div>
+        <button type="button" class="close-btn" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <input id="rule-id" type="hidden" />
+      <div class="field-grid">
+        <label class="span-2">关注什么
+          <select id="rule-field" required></select>
+        </label>
+        <label id="operator-field">比较方式<select id="rule-operator"></select></label>
+        <label id="threshold-field">触发值<input id="rule-threshold" type="number" step="0.001" inputmode="decimal" /></label>
+        <label id="ma-period-field" class="hidden">均线<select id="rule-ma-period">
+          <option value="5">MA5</option><option value="10">MA10</option><option value="20" selected>MA20</option><option value="60">MA60</option>
+        </select></label>
+        <label id="period-field" class="span-2 hidden">指标周期<select id="rule-period"></select></label>
+      </div>
+      <div id="rule-explainer" class="explain-card"></div>
+      <details class="advanced-box">
+        <summary>高级：防重复与命中次数</summary>
+        <div class="field-grid top-gap">
+          <label>安静时间（分钟）<input id="rule-cooldown" type="number" min="0" max="1440" value="30" /></label>
+          <label>连续命中次数<input id="rule-consecutive" type="number" min="1" max="100" value="1" /></label>
+          <label class="span-2">备注<input id="rule-description" maxlength="255" placeholder="例如：站上 1500 后提醒我" /></label>
+        </div>
+      </details>
+      <p id="rule-form-error" class="form-error hidden"></p>
+      <div class="sheet-actions">
+        <button type="button" class="btn btn-secondary" data-close-dialog>取消</button>
+        <button class="btn btn-primary" type="submit">保存条件</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="notification-dialog" class="sheet-dialog">
+    <form id="notification-form" method="dialog">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div><span class="eyebrow">DELIVERY</span><h2>通知方式</h2></div>
+        <button type="button" class="close-btn" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <div class="channel-tabs" role="tablist" aria-label="通知渠道">
+        <button type="button" class="active" data-channel="wecom">企业微信</button>
+        <button type="button" data-channel="bark">Bark</button>
+        <button type="button" data-channel="webhook">Webhook</button>
+        <button type="button" data-channel="none">仅面板</button>
+      </div>
+      <div id="channel-wecom" class="channel-pane">
+        <label>群机器人 Webhook 地址<input id="wecom-webhook" type="url" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." /></label>
+        <p class="field-hint">在企业微信群中添加“群机器人”，复制它的 Webhook 地址即可。</p>
+      </div>
+      <div id="channel-bark" class="channel-pane hidden">
+        <label>Bark 推送地址<input id="bark-url" type="url" placeholder="https://api.day.app/你的设备Key" /></label>
+        <p class="field-hint">适合 iPhone。填入 Bark App 显示的服务器地址与设备 Key。</p>
+      </div>
+      <div id="channel-webhook" class="channel-pane hidden">
+        <label>通用 Webhook 地址<input id="generic-webhook" type="url" placeholder="https://example.com/webhook" /></label>
+        <p class="field-hint">会 POST JSON，字段包含 title、content 和 text，可接入自建机器人或自动化。</p>
+      </div>
+      <div id="channel-none" class="channel-pane hidden">
+        <div class="explain-card">不发送外部通知。条件仍会被记录在“提醒记录”里，适合先观察一段时间。</div>
+      </div>
+      <p id="notification-form-error" class="form-error hidden"></p>
+      <div class="sheet-actions spread">
+        <button id="test-notification-btn" class="btn btn-secondary" type="button">发送测试</button>
+        <div class="action-pair">
+          <button type="button" class="btn btn-secondary" data-close-dialog>取消</button>
+          <button class="btn btn-primary" type="submit">保存通知</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="password-dialog" class="sheet-dialog compact-dialog">
+    <form id="password-form" method="dialog">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div><span class="eyebrow">ACCOUNT</span><h2>修改密码</h2></div>
+        <button type="button" class="close-btn" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <label>当前密码<input id="password-current" type="password" autocomplete="current-password" required placeholder="输入当前密码" /></label>
+      <label>新密码<input id="password-new" type="password" autocomplete="new-password" minlength="6" required placeholder="至少 6 位" /></label>
+      <label>确认新密码<input id="password-confirm" type="password" autocomplete="new-password" minlength="6" required placeholder="再次输入新密码" /></label>
+      <p id="password-form-error" class="form-error hidden"></p>
+      <div class="sheet-actions">
+        <button type="button" class="btn btn-secondary" data-close-dialog>取消</button>
+        <button class="btn btn-primary" type="submit">保存新密码</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="loading-cover" class="loading-cover hidden"><span class="spinner"></span><b>正在加载</b></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

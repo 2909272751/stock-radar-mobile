@@ -1,0 +1,7 @@
+.git
+.testdeps
+data
+backend/data
+__pycache__
+*.pyc
+test-server*.log
