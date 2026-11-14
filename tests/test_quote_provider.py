@@ -76,6 +76,22 @@ def test_yearly_bars_are_aggregated_from_monthly():
     assert aggregated[0].volume == 1200
 
 
+def test_yearly_bars_are_grouped_by_calendar_year():
+    bars = [
+        type("Bar", (), {"time": f"{year}-{month:02d}", "open": year, "close": year + month / 100, "high": year + 1, "low": year - 1, "volume": 10})()
+        for year, months in ((2024, (11, 12)), (2025, (1, 2, 3)))
+        for month in months
+    ]
+    aggregated = DualQuoteProvider._aggregate_yearly_bars(bars)
+    assert len(aggregated) == 2
+    assert aggregated[0].open == 2024
+    assert aggregated[0].close == 2024.12
+    assert aggregated[0].volume == 20
+    assert aggregated[1].open == 2025
+    assert aggregated[1].close == 2025.03
+    assert aggregated[1].volume == 30
+
+
 class FakeResponse:
     def __init__(self, content: bytes) -> None:
         self.content = content

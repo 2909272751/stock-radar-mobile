@@ -435,7 +435,7 @@ class DualQuoteProvider:
                         except Exception as exc:
                             logger.warning("Sina kline failed for %s period=%s: %s", key, period, exc)
                         if period == "yearly":
-                            bars = self._aggregate_bars(bars, 12)
+                            bars = self._aggregate_yearly_bars(bars)
                     else:
                         try:
                             bars = await self._fetch_eastmoney_kline(client, target, period)
@@ -482,6 +482,26 @@ class DualQuoteProvider:
                 )
             )
         return aggregated
+
+    @staticmethod
+    def _aggregate_yearly_bars(bars: list[KlineBar]) -> list[KlineBar]:
+        grouped: dict[str, list[KlineBar]] = {}
+        for bar in bars:
+            year = str(bar.time)[:4]
+            if len(year) != 4 or not year.isdigit():
+                continue
+            grouped.setdefault(year, []).append(bar)
+        return [
+            KlineBar(
+                time=chunk[-1].time,
+                open=chunk[0].open,
+                close=chunk[-1].close,
+                high=max(bar.high for bar in chunk),
+                low=min(bar.low for bar in chunk),
+                volume=sum(bar.volume for bar in chunk),
+            )
+            for chunk in grouped.values()
+        ]
 
 
 def build_quote_provider(name: str = "eastmoney") -> QuoteProvider:
