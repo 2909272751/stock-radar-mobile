@@ -62,6 +62,27 @@ def build_service(tmp_path: Path, *, required: int = 1, cooldown: int = 0):
     return service, repository, user.id, monitor.id
 
 
+def test_duplicate_rule_submission_returns_existing_rule(tmp_path):
+    database = Database(tmp_path / "duplicate.db")
+    database.init_db()
+    repository = MonitorRepository(database)
+    user = repository.create_user("duplicate-tester", "hash")
+    monitor = repository.create_monitor(MonitorCreate(code="600519", name="贵州茅台"), user.id)
+    payload = RuleCreate(
+        field=RuleField.LAST_PRICE,
+        operator=RuleOperator.GTE,
+        threshold=1500,
+        cooldown_minutes=30,
+    )
+
+    first = repository.create_rule(monitor.id, payload, user.id)
+    second = repository.create_rule(monitor.id, payload, user.id)
+
+    assert first.id == second.id
+    stored = repository.get_monitor(monitor.id, user.id)
+    assert len(stored.rules) == 1
+
+
 def test_hit_state_requires_consecutive_matches():
     assert advance_hit_state(True, 0, 3) == (1, False)
     assert advance_hit_state(True, 1, 3) == (2, False)

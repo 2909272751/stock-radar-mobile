@@ -49,6 +49,9 @@ docker compose up -d --build
 - 数据：`./data/monitor.db`
 - 升级：拉取新代码后 `docker compose up -d --build`
 - `data` 目录不要删除；删除会清空账号、自选和提醒记录
+- 服务启动时会自动把旧数据库补齐到当前表结构，例如新增 `rules.ma_period`；升级后不需要手工执行 SQL
+- `GET /api/health` 会返回数据库可写性、表结构是否完整和缺失字段，状态为 `degraded` 时可直接定位问题
+- 维护数据库时请通过容器用户执行（`docker exec -u 10001 ...`），不要让宿主机 root 直接写 `data/monitor.db`，否则可能产生权限或 WAL 残留问题
 
 ## 开发
 

@@ -7,7 +7,7 @@
   <meta name="description" content="A 股价格与 MACD 指标提醒">
   <title>股价雷达</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/styles.css?v=1.0.4">
+  <link rel="stylesheet" href="/assets/styles.css?v=1.0.6">
 </head>
 <body>
   <div class="app-shell">
@@ -169,7 +169,7 @@
   </div>
 
   <dialog id="monitor-dialog" class="sheet-dialog">
-    <form id="monitor-form" method="dialog">
+    <form id="monitor-form">
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-head">
         <div><span class="eyebrow">WATCH ITEM</span><h2 id="monitor-dialog-title">添加股票</h2></div>
@@ -207,7 +207,7 @@
   </dialog>
 
   <dialog id="rule-dialog" class="sheet-dialog rule-dialog">
-    <form id="rule-form" method="dialog">
+    <form id="rule-form">
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-head">
         <div><span class="eyebrow">CONDITION</span><h2 id="rule-dialog-title">添加提醒条件</h2></div>
@@ -243,7 +243,7 @@
   </dialog>
 
   <dialog id="notification-dialog" class="sheet-dialog">
-    <form id="notification-form" method="dialog">
+    <form id="notification-form">
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-head">
         <div><span class="eyebrow">DELIVERY</span><h2>通知方式</h2></div>
@@ -282,7 +282,7 @@
   </dialog>
 
   <dialog id="password-dialog" class="sheet-dialog compact-dialog">
-    <form id="password-form" method="dialog">
+    <form id="password-form">
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-head">
         <div><span class="eyebrow">ACCOUNT</span><h2>修改密码</h2></div>
@@ -301,6 +301,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <div id="loading-cover" class="loading-cover hidden"><span class="spinner"></span><b>正在加载</b></div>
-  <script src="/assets/app.js?v=1.0.4" defer></script>
+  <script src="/assets/app.js?v=1.0.6" defer></script>
 </body>
 </html>

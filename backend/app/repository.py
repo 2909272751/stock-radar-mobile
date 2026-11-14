@@ -326,6 +326,30 @@ class MonitorRepository:
             monitor = conn.execute("SELECT id FROM monitors WHERE id = ? AND user_id = ?", (monitor_id, user_id)).fetchone()
             if not monitor:
                 raise ValueError("监控项不存在，无法添加规则")
+            duplicate = conn.execute(
+                """
+                SELECT rules.*
+                FROM rules
+                INNER JOIN monitors ON monitors.id = rules.monitor_id
+                WHERE rules.monitor_id = ? AND monitors.user_id = ?
+                  AND rules.field = ? AND rules.operator = ? AND rules.period = ?
+                  AND rules.threshold = ? AND rules.ma_period = ?
+                  AND rules.enabled = 1
+                ORDER BY rules.id ASC
+                LIMIT 1
+                """,
+                (
+                    monitor_id,
+                    user_id,
+                    payload.field.value,
+                    payload.operator.value,
+                    payload.period,
+                    payload.threshold,
+                    payload.ma_period,
+                ),
+            ).fetchone()
+            if duplicate:
+                return self._row_to_rule(duplicate)
             cursor = conn.execute(
                 """
                 INSERT INTO rules (

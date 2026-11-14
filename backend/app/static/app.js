@@ -16,6 +16,7 @@
     draftRules: [],
     editingMonitorId: null,
     editingRuleIndex: null,
+    ruleMonitorId: null,
     stream: null,
   };
 
@@ -65,10 +66,22 @@
     toastTimer = setTimeout(() => { node.className = "toast"; }, 3300);
   };
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
   const api = async (path, options = {}) => {
     const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
     if (state.token) headers["X-Auth-Token"] = state.token;
-    const response = await fetch(path, { ...options, headers });
+    const method = String(options.method || "GET").toUpperCase();
+    let response;
+    try {
+      response = await fetch(path, { ...options, headers });
+    } catch (_) {
+      throw new Error(`网络连接失败：${path}，请检查网络后重试`);
+    }
+    if (!response.ok && response.status >= 500 && method === "GET" && !options.retried) {
+      await sleep(600);
+      return api(path, { ...options, retried: true });
+    }
     if (response.status === 401) {
       clearSession();
       showLogin();
@@ -76,10 +89,16 @@
     }
     if (!response.ok) {
       let detail = `请求失败 (${response.status})`;
+      let code = "";
       try {
         const body = await response.json();
         detail = typeof body.detail === "string" ? body.detail : Array.isArray(body.detail) ? body.detail.map((item) => item.msg).join("；") : detail;
+        code = body.code || "";
       } catch (_) { /* ignore malformed error body */ }
+      if (response.status >= 500) {
+        const suffix = code ? ` [${code}]` : "";
+        detail = `${detail}${suffix}（${path}）`;
+      }
       throw new Error(detail);
     }
     if (response.status === 204) return null;
@@ -457,6 +476,7 @@
   const closeDialog = (dialog) => {
     if (typeof dialog.close === "function") dialog.close();
     else dialog.removeAttribute("open");
+    if (dialog.id === "rule-dialog") state.ruleMonitorId = null;
   };
 
   const resetMonitorForm = () => {
@@ -556,6 +576,7 @@
 
   const openRuleDialog = (index = null) => {
     state.editingRuleIndex = index;
+    state.ruleMonitorId = null;
     const rule = index == null ? null : state.draftRules[index];
     $("#rule-dialog-title").textContent = rule ? "编辑提醒条件" : "添加提醒条件";
     $("#rule-id").value = index == null ? "" : String(index);
@@ -570,6 +591,43 @@
     $("#rule-form-error").classList.add("hidden");
     patchRuleFormVisibility();
     openDialog($("#rule-dialog"));
+  };
+
+  const openRuleDialogForMonitor = (monitor) => {
+    state.editingRuleIndex = null;
+    state.ruleMonitorId = monitor.id;
+    $("#rule-dialog-title").textContent = `给「${monitor.name || monitor.code}」添加条件`;
+    $("#rule-id").value = "";
+    $("#rule-field").value = "last_price";
+    $("#rule-operator").value = "gte";
+    $("#rule-threshold").value = "";
+    $("#rule-period").value = "daily";
+    $("#rule-ma-period").value = 20;
+    $("#rule-cooldown").value = 30;
+    $("#rule-consecutive").value = 1;
+    $("#rule-description").value = "";
+    $("#rule-form-error").classList.add("hidden");
+    patchRuleFormVisibility();
+    openDialog($("#rule-dialog"));
+    setTimeout(() => $("#rule-threshold").focus(), 80);
+  };
+
+  const saveRuleForMonitor = async (monitor, rule) => {
+    const button = $("#rule-form button[type=submit]");
+    const errorNode = $("#rule-form-error");
+    errorNode.classList.add("hidden");
+    setBusy(button, true, "保存中…");
+    try {
+      await api(`/api/monitors/${monitor.id}/rules`, { method: "POST", body: JSON.stringify(rule) });
+      closeDialog($("#rule-dialog"));
+      await Promise.all([refreshMonitors(), refreshSystem()]);
+      toast("条件已添加");
+    } catch (error) {
+      errorNode.textContent = error.message;
+      errorNode.classList.remove("hidden");
+    } finally {
+      setBusy(button, false);
+    }
   };
 
   const switchChannel = (channel) => {
@@ -737,7 +795,7 @@
       const addRule = event.target.closest("[data-add-rule]");
       if (addRule) {
         const monitor = state.monitors.find((item) => item.id === Number(addRule.dataset.addRule));
-        if (monitor) openMonitorDialog(monitor);
+        if (monitor) openRuleDialogForMonitor(monitor);
         return;
       }
       const remove = event.target.closest("[data-delete-monitor]");
@@ -881,10 +939,15 @@
         errorNode.classList.remove("hidden");
         return;
       }
-      if (state.editingRuleIndex == null) state.draftRules.push(rule);
-      else state.draftRules[state.editingRuleIndex] = { ...state.draftRules[state.editingRuleIndex], ...rule };
-      closeDialog($("#rule-dialog"));
-      renderDraftRules();
+      const draftMonitor = state.monitors.find((item) => item.id === state.ruleMonitorId);
+      if (draftMonitor) {
+        saveRuleForMonitor(draftMonitor, rule);
+      } else {
+        if (state.editingRuleIndex == null) state.draftRules.push(rule);
+        else state.draftRules[state.editingRuleIndex] = { ...state.draftRules[state.editingRuleIndex], ...rule };
+        closeDialog($("#rule-dialog"));
+        renderDraftRules();
+      }
     });
 
     $$("[data-close-dialog]").forEach((button) => {

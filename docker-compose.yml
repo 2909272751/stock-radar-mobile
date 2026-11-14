@@ -7,7 +7,7 @@ services:
       args:
         DEBIAN_MIRROR: mirrors.aliyun.com
         PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
-    image: stock-radar:1.0.4
+    image: stock-radar:1.0.6
     container_name: stock-radar-web
     restart: unless-stopped
     init: true
@@ -35,7 +35,7 @@ services:
         max-file: "3"
 
   monitor:
-    image: stock-radar:1.0.4
+    image: stock-radar:1.0.6
     container_name: stock-radar-monitor
     restart: unless-stopped
     init: true
@@ -55,7 +55,7 @@ services:
         max-file: "3"
 
   notifier:
-    image: stock-radar:1.0.4
+    image: stock-radar:1.0.6
     container_name: stock-radar-notifier
     restart: unless-stopped
     init: true

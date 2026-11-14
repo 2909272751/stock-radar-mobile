@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -45,6 +47,7 @@ from .schemas import (
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -125,6 +128,9 @@ class InstrumentSearchItem(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.init_db()
+    diagnostics = database.diagnostics()
+    if not diagnostics.get("writable") or not diagnostics.get("schema_ok"):
+        logger.error("Database startup check failed: %s", diagnostics)
     bootstrap_default_user()
     load_saved_poll_interval()
     yield
@@ -132,6 +138,45 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.mount("/assets", StaticFiles(directory=str(STATIC_DIR)), name="assets")
+
+
+@app.exception_handler(sqlite3.OperationalError)
+async def handle_database_error(request: Request, exc: sqlite3.OperationalError) -> JSONResponse:
+    message = str(exc)
+    logger.exception("Database error on %s %s", request.method, request.url.path)
+    if "no column named" in message:
+        code = "database_schema_outdated"
+        detail = "数据库结构落后于程序版本，服务启动时自动升级未生效，请查看服务日志"
+    elif "readonly" in message or "unable to open" in message:
+        code = "database_not_writable"
+        detail = "数据库文件不可写，请检查数据目录权限"
+    elif "locked" in message or "busy" in message:
+        code = "database_busy"
+        detail = "数据库正忙，请稍后重试"
+    else:
+        code = "database_error"
+        detail = "数据库操作失败，请稍后重试"
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": detail,
+            "code": code,
+            "path": request.url.path,
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "服务器内部错误，请稍后重试；若持续出现请联系管理员查看服务日志",
+            "code": "internal_error",
+            "path": request.url.path,
+        },
+    )
 
 
 @app.middleware("http")
@@ -148,8 +193,14 @@ def index() -> str:
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": "stock-radar"}
+def health() -> dict[str, object]:
+    diagnostics = database.diagnostics()
+    healthy = bool(diagnostics.get("writable")) and bool(diagnostics.get("schema_ok"))
+    return {
+        "status": "ok" if healthy else "degraded",
+        "service": "stock-radar",
+        "database": diagnostics,
+    }
 
 
 @app.get("/api/system", response_model=SystemInfo)

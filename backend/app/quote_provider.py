@@ -406,9 +406,17 @@ class DualQuoteProvider:
                     errors.append(f"东方财富 {exc}")
                     logger.warning("Eastmoney instrument search failed for %s: %s", query, exc)
         if not results and errors:
+            if cached:
+                logger.warning(
+                    "All instrument search sources failed for %s; serving stale cache from %.0fs ago",
+                    query,
+                    time.monotonic() - cached[0],
+                )
+                return cached[1]
             raise RuntimeError("；".join(errors))
         results = self._rank_search_results(query, results)
-        self._search_cache[cache_key] = (time.monotonic(), results)
+        if results:
+            self._search_cache[cache_key] = (time.monotonic(), results)
         if len(self._search_cache) > 128:
             oldest = sorted(self._search_cache.items(), key=lambda item: item[1][0])[:32]
             for key, _ in oldest:

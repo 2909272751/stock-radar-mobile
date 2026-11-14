@@ -118,6 +118,30 @@ def test_six_digit_query_prefers_stock_over_index():
     assert ranked[0]["code"] == "000001.SZ"
 
 
+def test_search_falls_back_to_stale_cache_when_all_sources_fail(monkeypatch):
+    provider = DualQuoteProvider()
+    cached_results = [{"code": "600000.SH", "name": "浦发银行", "instrument_type": "stock"}]
+    provider._search_cache["浦发银行|8"] = (-10_000.0, cached_results)
+
+    class FailingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, *args, **kwargs):
+            raise RuntimeError("upstream unavailable")
+
+    monkeypatch.setattr("backend.app.quote_provider.httpx.AsyncClient", FailingClient)
+    results = asyncio.run(provider.search_instruments("浦发银行", limit=8))
+
+    assert results == cached_results
+
+
 class FakeResponse:
     def __init__(self, content: bytes) -> None:
         self.content = content

@@ -12,3 +12,4 @@ venv/
 *.db-wal
 .DS_Store
 Thumbs.db
+ui-repro.png

@@ -136,6 +136,13 @@ CREATE INDEX IF NOT EXISTS idx_notification_jobs_status ON notification_jobs (st
 CREATE INDEX IF NOT EXISTS idx_system_events_id ON system_events (id);
 """
 
+# Columns added after the first release. Keep this list in sync with SCHEMA so
+# databases created by older images are upgraded on startup instead of failing
+# later on INSERT/UPDATE with "table ... has no column named ...".
+RULE_COLUMN_MIGRATIONS: dict[str, str] = {
+    "ma_period": "INTEGER NOT NULL DEFAULT 20",
+}
+
 
 class Database:
     def __init__(self, path: Path) -> None:
@@ -154,18 +161,23 @@ class Database:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA synchronous = NORMAL")
             conn.executescript(SCHEMA)
-            columns = {
-                row["name"]
-                for row in conn.execute("PRAGMA table_info(rules)").fetchall()
-            }
-            if "ma_period" not in columns:
-                conn.execute("ALTER TABLE rules ADD COLUMN ma_period INTEGER NOT NULL DEFAULT 20")
+            self._migrate_columns(conn)
             indicator_columns = {
                 row["name"]: row["pk"]
                 for row in conn.execute("PRAGMA table_info(indicator_snapshots)").fetchall()
             }
             if indicator_columns and indicator_columns.get("period", 0) == 0:
                 self._migrate_indicator_snapshots(conn)
+
+    @staticmethod
+    def _migrate_columns(conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(rules)").fetchall()
+        }
+        for name, definition in RULE_COLUMN_MIGRATIONS.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE rules ADD COLUMN {name} {definition}")
 
     @staticmethod
     def _migrate_indicator_snapshots(conn: sqlite3.Connection) -> None:
@@ -199,3 +211,28 @@ class Database:
             """
         )
         conn.execute("DROP TABLE indicator_snapshots_legacy")
+
+    def diagnostics(self) -> dict[str, object]:
+        """Return a serializable snapshot used by /api/health."""
+        result: dict[str, object] = {
+            "path": str(self.path),
+            "exists": self.path.exists(),
+            "writable": False,
+            "schema_ok": False,
+            "missing_columns": [],
+        }
+        try:
+            with self.connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                columns = {
+                    row["name"]
+                    for row in conn.execute("PRAGMA table_info(rules)").fetchall()
+                }
+                missing = sorted(set(RULE_COLUMN_MIGRATIONS) - columns)
+                result["writable"] = True
+                result["schema_ok"] = not missing
+                result["missing_columns"] = missing
+                conn.rollback()
+        except Exception as exc:
+            result["error"] = f"{type(exc).__name__}: {exc}"
+        return result
