@@ -23,6 +23,7 @@ from .schemas import (
     AlertPageOut,
     AuthLoginRequest,
     AuthLoginResponse,
+    AuthRegisterRequest,
     AuthStatus,
     ClearAlertsResponse,
     InstrumentType,
@@ -133,6 +134,14 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.mount("/assets", StaticFiles(directory=str(STATIC_DIR)), name="assets")
 
 
+@app.middleware("http")
+async def disable_stale_asset_cache(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/assets/"):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -175,16 +184,30 @@ def get_auth_status(request: Request) -> AuthStatus:
         authenticated=session is not None,
         username=session.username if session else "",
         account_initialized=count > 0,
+        registration_enabled=settings.allow_registration,
     )
 
 
 @app.post("/api/auth/login", response_model=AuthLoginResponse)
 def login(payload: AuthLoginRequest) -> AuthLoginResponse:
     if repository.count_users() == 0:
-        raise HTTPException(status_code=400, detail="系统还没有账号，请先在 .env 中配置 LOGIN_USERNAME 和 LOGIN_PASSWORD 并重启 web 服务")
+        raise HTTPException(status_code=400, detail="系统还没有账号，请先注册一个账号")
     user = repository.get_user_by_username(payload.username)
     if user is None or not user.enabled or not auth_manager.verify_secret_hash(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
+    session = auth_manager.create_session(user.username)
+    return AuthLoginResponse(authenticated=True, username=session.username, token=session.token, expires_at=session.expires_at)
+
+
+@app.post("/api/auth/register", response_model=AuthLoginResponse)
+def register(payload: AuthRegisterRequest) -> AuthLoginResponse:
+    if not settings.allow_registration:
+        raise HTTPException(status_code=403, detail="注册功能已关闭")
+    try:
+        user = repository.create_user(payload.username, auth_manager.create_secret_hash(payload.password))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    repository.create_system_event("config_changed", {"kind": "user_registered", "username": user.username})
     session = auth_manager.create_session(user.username)
     return AuthLoginResponse(authenticated=True, username=session.username, token=session.token, expires_at=session.expires_at)
 

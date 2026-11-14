@@ -17,6 +17,7 @@ class Settings:
     quote_provider: str = "eastmoney"
     login_username: str = ""
     login_password: str = ""
+    allow_registration: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -30,6 +31,7 @@ class Settings:
             quote_provider=os.getenv("QUOTE_PROVIDER", "eastmoney").strip().lower() or "eastmoney",
             login_username=os.getenv("LOGIN_USERNAME", "").strip(),
             login_password=os.getenv("LOGIN_PASSWORD", "").strip(),
+            allow_registration=os.getenv("ALLOW_REGISTRATION", "1").strip().lower() in {"1", "true", "yes", "on"},
         )
 
     def ensure_directories(self) -> None:

@@ -242,6 +242,11 @@ class AuthLoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=256)
 
 
+class AuthRegisterRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=64, pattern=r"^\S(?:.*\S)?$")
+    password: str = Field(..., min_length=6, max_length=256)
+
+
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(..., min_length=1, max_length=256)
     new_password: str = Field(..., min_length=6, max_length=256)
@@ -258,6 +263,7 @@ class AuthStatus(BaseModel):
     authenticated: bool
     username: str = ""
     account_initialized: bool = False
+    registration_enabled: bool = True
 
 
 class ClearAlertsResponse(BaseModel):

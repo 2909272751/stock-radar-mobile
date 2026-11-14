@@ -7,7 +7,7 @@
   <meta name="description" content="A 股价格与 MACD 指标提醒">
   <title>股价雷达</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/styles.css?v=1.0.4">
 </head>
 <body>
   <div class="app-shell">
@@ -39,6 +39,10 @@
           </div>
         </div>
         <div class="auth-card">
+          <div class="tab-row" role="tablist" aria-label="账号操作">
+            <button id="login-tab" class="tab active" type="button" data-auth-tab="login" role="tab" aria-selected="true">登录</button>
+            <button id="register-tab" class="tab" type="button" data-auth-tab="register" role="tab" aria-selected="false">注册</button>
+          </div>
           <form id="login-form" class="stack-form">
             <div class="form-heading">
               <h2>欢迎回来</h2>
@@ -47,7 +51,19 @@
             <label>账号<input id="login-username" autocomplete="username" required placeholder="输入账号" /></label>
             <label>密码<input id="login-password" type="password" autocomplete="current-password" required placeholder="输入密码" /></label>
             <button class="btn btn-primary btn-block" type="submit">进入面板</button>
-            <p class="auth-hint">账号由部署者在 `.env` 中配置；忘记密码可在登录后进入面板修改，或由部署者重置。</p>
+            <button class="text-btn" type="button" data-auth-tab="register">还没有账号？注册一个</button>
+          </form>
+          <form id="register-form" class="stack-form hidden">
+            <div class="form-heading">
+              <h2>创建账号</h2>
+              <p>填写账号和密码即可，不需要注册码。</p>
+            </div>
+            <label>账号<input id="register-username" autocomplete="username" minlength="2" maxlength="64" required placeholder="设置登录账号" /></label>
+            <label>密码<input id="register-password" type="password" autocomplete="new-password" minlength="6" required placeholder="至少 6 位" /></label>
+            <label>确认密码<input id="register-password-confirm" type="password" autocomplete="new-password" minlength="6" required placeholder="再次输入密码" /></label>
+            <button class="btn btn-primary btn-block" type="submit">注册并进入</button>
+            <p id="register-error" class="form-error hidden"></p>
+            <button class="text-btn" type="button" data-auth-tab="login">已有账号？返回登录</button>
           </form>
         </div>
       </section>
@@ -285,6 +301,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <div id="loading-cover" class="loading-cover hidden"><span class="spinner"></span><b>正在加载</b></div>
-  <script src="/assets/app.js" defer></script>
+  <script src="/assets/app.js?v=1.0.4" defer></script>
 </body>
 </html>

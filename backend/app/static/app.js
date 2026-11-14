@@ -124,7 +124,20 @@
     $("#change-password-btn").classList.remove("hidden");
   };
 
-  const login = async (form, path, body) => {
+  const switchAuthTab = (tab) => {
+    $$("[data-auth-tab]").forEach((node) => {
+      const active = node.dataset.authTab === tab;
+      node.classList.toggle("active", active);
+      if (node.getAttribute("role") === "tab") node.setAttribute("aria-selected", String(active));
+    });
+    $("#login-form").classList.toggle("hidden", tab !== "login");
+    $("#register-form").classList.toggle("hidden", tab !== "register");
+    if (tab === "register") $("#register-error").classList.add("hidden");
+    const first = tab === "login" ? $("#login-username") : $("#register-username");
+    setTimeout(() => first?.focus(), 40);
+  };
+
+  const login = async (form, path, body, onError) => {
     const button = $("button[type=submit]", form);
     setBusy(button, true, "请稍候…");
     try {
@@ -135,7 +148,8 @@
       form.reset();
       await enterApp();
     } catch (error) {
-      toast(error.message, true);
+      if (onError) onError(error);
+      else toast(error.message, true);
     } finally {
       setBusy(button, false);
     }
@@ -285,6 +299,11 @@
     $("#instrument-results").classList.add("hidden");
     $("#instrument-results").innerHTML = "";
   };
+  const showInstrumentHint = (message, isError = false) => {
+    const hint = $("#code-hint");
+    hint.className = `field-hint${isError ? " hint-error" : ""}`;
+    hint.textContent = message;
+  };
   const selectInstrument = async (code, name) => {
     $("#monitor-code").value = code;
     if (name && !$("#monitor-name").value.trim()) $("#monitor-name").value = name;
@@ -302,14 +321,20 @@
     try {
       const items = await api(`/api/instruments/search?keyword=${encodeURIComponent(keyword)}`);
       if (seq !== searchSeq) return;
-      if (!items.length) { hideInstrumentResults(); return; }
+      if (!items.length) {
+        hideInstrumentResults();
+        showInstrumentHint(`没有找到“${keyword}”，可以改用 6 位代码，例如 600000`, true);
+        return;
+      }
       results.innerHTML = items.map((item) => `
         <button type="button" class="instrument-result" role="option" data-result-code="${escapeHtml(item.code)}" data-result-name="${escapeHtml(item.name)}">
           <b>${escapeHtml(item.name)}</b><span>${escapeHtml(item.code)}</span><small>${item.instrument_type === "index" ? "指数" : "A股"}</small>
         </button>`).join("");
       results.classList.remove("hidden");
-    } catch (_) {
-      if (seq === searchSeq) hideInstrumentResults();
+    } catch (error) {
+      if (seq !== searchSeq) return;
+      hideInstrumentResults();
+      showInstrumentHint(`搜索暂时不可用：${error.message}；可直接输入 6 位代码`, true);
     }
   };
 
@@ -596,14 +621,33 @@
   };
 
   const bindEvents = () => {
+    $$("[data-auth-tab]").forEach((button) => button.addEventListener("click", () => switchAuthTab(button.dataset.authTab)));
     $("#login-form").addEventListener("submit", (event) => {
       event.preventDefault();
       login(event.currentTarget, "/api/auth/login", { username: $("#login-username").value.trim(), password: $("#login-password").value });
+    });
+    $("#register-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const errorNode = $("#register-error");
+      errorNode.classList.add("hidden");
+      if ($("#register-password").value !== $("#register-password-confirm").value) {
+        errorNode.textContent = "两次输入的密码不一致";
+        errorNode.classList.remove("hidden");
+        return;
+      }
+      await login(event.currentTarget, "/api/auth/register", {
+        username: $("#register-username").value.trim(),
+        password: $("#register-password").value,
+      }, (error) => {
+        errorNode.textContent = error.message;
+        errorNode.classList.remove("hidden");
+      });
     });
     $("#logout-btn").addEventListener("click", async () => {
       try { await api("/api/auth/logout", { method: "POST" }); } catch (_) { /* ignore */ }
       clearSession();
       showLogin();
+      switchAuthTab("login");
       setTimeout(() => $("#login-username").focus(), 40);
     });
     $("#change-password-btn").addEventListener("click", () => {
@@ -955,6 +999,7 @@
       }
     }
     showLogin();
+    switchAuthTab("login");
     setTimeout(() => $("#login-username").focus(), 40);
   };
 

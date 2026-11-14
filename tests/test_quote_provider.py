@@ -92,6 +92,32 @@ def test_yearly_bars_are_grouped_by_calendar_year():
     assert aggregated[1].volume == 30
 
 
+def test_eastmoney_search_response_is_parsed_and_filters_funds():
+    payload = {
+        "QuotationCodeTable": {
+            "Data": [
+                {"Code": "600000", "Name": "浦发银行", "MktNum": "1", "SecurityTypeName": "沪A"},
+                {"Code": "000001", "Name": "华夏成长", "MktNum": "0", "SecurityTypeName": "基金"},
+                {"Code": "000001", "Name": "上证指数", "MktNum": "1", "SecurityTypeName": "指数"},
+            ]
+        }
+    }
+    results = DualQuoteProvider._parse_eastmoney_search_response(payload, 8)
+    assert [(item["name"], item["code"], item["instrument_type"]) for item in results] == [
+        ("浦发银行", "600000.SH", "stock"),
+        ("上证指数", "000001.SH", "index"),
+    ]
+
+
+def test_six_digit_query_prefers_stock_over_index():
+    results = [
+        {"code": "000001.SH", "name": "上证指数", "instrument_type": "index"},
+        {"code": "000001.SZ", "name": "平安银行", "instrument_type": "stock"},
+    ]
+    ranked = DualQuoteProvider._rank_search_results("000001", results)
+    assert ranked[0]["code"] == "000001.SZ"
+
+
 class FakeResponse:
     def __init__(self, content: bytes) -> None:
         self.content = content

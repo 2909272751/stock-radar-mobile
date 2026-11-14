@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -60,9 +61,12 @@ class DualQuoteProvider:
     SINA_KLINE_URL = "https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData"
     TENCENT_QUOTE_URL = "https://qt.gtimg.cn/q="
     TENCENT_SEARCH_URL = "https://smartbox.gtimg.cn/s3/"
+    EASTMONEY_SEARCH_URL = "https://searchapi.eastmoney.com/api/suggest/get"
 
     def __init__(self, batch_size: int = 50) -> None:
         self.batch_size = max(batch_size, 1)
+        self._search_cache: dict[str, tuple[float, list[dict[str, str]]]] = {}
+        self._search_cache_ttl = 180.0
 
     def _headers(self, referer: str = "https://quote.eastmoney.com/") -> dict[str, str]:
         return {
@@ -364,15 +368,101 @@ class DualQuoteProvider:
         query = (keyword or "").strip()
         if not query:
             return []
+        cache_key = f"{query.lower()}|{limit}"
+        cached = self._search_cache.get(cache_key)
+        if cached and time.monotonic() - cached[0] < self._search_cache_ttl:
+            return cached[1]
+
+        errors: list[str] = []
+        results: list[dict[str, str]] = []
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(8.0, connect=5.0),
+            timeout=httpx.Timeout(6.0, connect=4.0),
             headers=self._headers("https://gu.qq.com/"),
             trust_env=False,
+            limits=httpx.Limits(max_connections=2, max_keepalive_connections=1),
         ) as client:
-            response = await client.get(self.TENCENT_SEARCH_URL, params={"q": query, "t": "all"})
-            response.raise_for_status()
-            text = response.content.decode("gbk", errors="ignore")
-        return self._parse_search_response(text, limit)
+            try:
+                response = await client.get(self.TENCENT_SEARCH_URL, params={"q": query, "t": "all"})
+                response.raise_for_status()
+                results = self._parse_search_response(response.content.decode("gbk", errors="ignore"), limit)
+            except Exception as exc:
+                errors.append(f"腾讯 {exc}")
+                logger.warning("Tencent instrument search failed for %s: %s", query, exc)
+            if not results:
+                try:
+                    response = await client.get(
+                        self.EASTMONEY_SEARCH_URL,
+                        params={
+                            "input": query,
+                            "type": "14",
+                            "token": "D43BF722C8E33BDC906FB84D85E326E8",
+                            "count": str(limit),
+                        },
+                        headers=self._headers("https://quote.eastmoney.com/"),
+                    )
+                    response.raise_for_status()
+                    results = self._parse_eastmoney_search_response(response.json(), limit)
+                except Exception as exc:
+                    errors.append(f"东方财富 {exc}")
+                    logger.warning("Eastmoney instrument search failed for %s: %s", query, exc)
+        if not results and errors:
+            raise RuntimeError("；".join(errors))
+        results = self._rank_search_results(query, results)
+        self._search_cache[cache_key] = (time.monotonic(), results)
+        if len(self._search_cache) > 128:
+            oldest = sorted(self._search_cache.items(), key=lambda item: item[1][0])[:32]
+            for key, _ in oldest:
+                self._search_cache.pop(key, None)
+        return results
+
+    @staticmethod
+    def _rank_search_results(query: str, results: list[dict[str, str]]) -> list[dict[str, str]]:
+        cleaned = (query or "").strip().lower()
+        if cleaned.isdigit() and len(cleaned) == 6:
+            return sorted(results, key=lambda item: (0 if item.get("instrument_type") == "stock" else 1))
+        return results
+
+    @staticmethod
+    def _parse_eastmoney_search_response(payload: object, limit: int = 8) -> list[dict[str, str]]:
+        if not isinstance(payload, dict):
+            return []
+        rows = (payload.get("QuotationCodeTable") or {}).get("Data") or []
+        if isinstance(rows, dict):
+            rows = list(rows.values())
+        results: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            security_type = str(row.get("SecurityTypeName") or row.get("SecurityType") or "")
+            market = str(row.get("MktNum") or "")
+            code = str(row.get("Code") or "").strip()
+            name = str(row.get("Name") or "").strip()
+            if not code or not name:
+                continue
+            is_index = "指数" in security_type
+            is_a_share = market == "1" and (code.startswith(("0", "3", "6")) or security_type in {"深A", "沪A", "京A"})
+            if not is_index and not is_a_share:
+                continue
+            instrument_type = "index" if is_index else "stock"
+            market_suffix = {"1": "SH", "0": "SZ", "2": "BJ"}.get(market, "")
+            if is_index and code.startswith("399"):
+                market_suffix = "SZ"
+            if not market_suffix:
+                continue
+            normalized = f"{code}.{market_suffix}"
+            try:
+                normalize_code(normalized, instrument_type)
+            except ValueError:
+                continue
+            key = (instrument_type, normalized)
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append({"code": normalized, "name": name, "instrument_type": instrument_type})
+            if len(results) >= limit:
+                break
+        return results
 
     @staticmethod
     def _parse_search_response(text: str, limit: int = 8) -> list[dict[str, str]]:
